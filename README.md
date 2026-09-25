@@ -28,7 +28,7 @@ Use a Python executable that is available on your machine. Restart MCP servers i
 
 ## Tool behavior
 
-`get_codex_limits` takes no arguments and returns locale-neutral structured data containing the primary and secondary rate-limit windows, current usage, and reset times. Reset times are formatted in the local timezone.
+`get_codex_limits` accepts an optional `percentageMode` argument: `remaining` (the default) or `used`. The text fallback uses the selected direction, and the result includes both `usedPercent` and `displayPercent`. It returns locale-neutral structured data containing the primary and secondary rate-limit windows and reset times. Reset times are formatted in the local timezone.
 
 The MCP server instructions ask Codex to call the tool once near the end of each reply and append a compact status block in the language of the user's latest message. These instructions guide the model; as with other tool-using workflows, the host model decides whether to call the tool.
 

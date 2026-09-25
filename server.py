@@ -16,14 +16,23 @@ import codex_limits_core as limits  # noqa: E402
 
 
 SERVER_NAME = "codex-limits"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.1.0"
 TOOL_NAME = "get_codex_limits"
+PERCENTAGE_MODES = {"used", "remaining"}
 SERVER_INSTRUCTIONS = (
     "For each Codex reply, call get_codex_limits once immediately before composing the final "
-    "answer. Keep the answer in the language of the user's latest message, and append a compact "
-    "status block in that same language. Show used percentage, a 20-cell progress bar, and the "
-    "supplied local reset time for each available window. Use the 5-hour and 7-day window labels "
-    "naturally in the user's language. Do not call the tool more than once per assistant turn."
+    "answer. Default percentageMode to 'remaining'; pass 'used' only when the user asks for the "
+    "used percentage. Use the tool result's displayPercent and percentageMode for the text. "
+    "Separate the main answer from the compact fallback with a Markdown horizontal rule, then use "
+    "one Markdown bullet per available window. Keep percentages right-aligned in a four-character "
+    "field using figure spaces (U+2007) before shorter values, and put one ideographic space "
+    "(U+3000) before each 20-cell progress bar so both bars start on the same axis. Use '█' for "
+    "filled cells and '░' for empty cells; wrap only the 20-cell bar in inline code to keep its "
+    "cells on a monospace grid. Never put the whole fallback in a code block. Include the "
+    "local reset time. Do not put the whole fallback in a code fence or table, and do not add a "
+    "heading, updated timestamp, timezone, or column labels. In Russian, use labels '5ч' and '7д'. "
+    "Do not call the tool more "
+    "than once per assistant turn."
 )
 
 
@@ -40,7 +49,16 @@ def error(request_id: Any, code: int, message: str) -> None:
     send({"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}})
 
 
-def tool_result() -> dict[str, Any]:
+def tool_result(arguments: Any) -> dict[str, Any]:
+    if not isinstance(arguments, dict):
+        arguments = {}
+    percentage_mode = arguments.get("percentageMode", "remaining")
+    if not isinstance(percentage_mode, str) or percentage_mode not in PERCENTAGE_MODES:
+        return {
+            "isError": True,
+            "content": [{"type": "text", "text": "percentageMode must be 'used' or 'remaining'."}],
+        }
+
     try:
         data = limits.normalize_status(limits.rpc_request(limits.codex_executable()))
     except limits.CodexLimitsError as exc:
@@ -53,6 +71,13 @@ def tool_result() -> dict[str, Any]:
             "isError": True,
             "content": [{"type": "text", "text": "Could not read fresh Codex rate limits."}],
         }
+
+    data["percentageMode"] = percentage_mode
+    for window in (data["primary"], data["secondary"]):
+        if window is None:
+            continue
+        used = window["usedPercent"]
+        window["displayPercent"] = used if percentage_mode == "used" else 100 - used
 
     return {
         "content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}],
@@ -89,12 +114,20 @@ def handle(message: dict[str, Any]) -> None:
                         "description": (
                             "Read current Codex plan rate-limit windows. Use once immediately "
                             "before composing a Codex reply that should end with a fresh status "
-                            "block in the user's language. Returns locale-neutral structured "
-                            "data. Read-only."
+                            "block in the user's language. percentageMode selects whether "
+                            "displayPercent represents used or remaining usage (defaults to remaining). "
+                            "Returns locale-neutral structured data. Read-only."
                         ),
                         "inputSchema": {
                             "type": "object",
-                            "properties": {},
+                            "properties": {
+                                "percentageMode": {
+                                    "type": "string",
+                                    "enum": ["used", "remaining"],
+                                    "default": "remaining",
+                                    "description": "Show the percentage used, or the percentage remaining.",
+                                }
+                            },
                             "additionalProperties": False,
                         },
                         "outputSchema": {
@@ -102,10 +135,11 @@ def handle(message: dict[str, Any]) -> None:
                             "properties": {
                                 "updatedAtLocal": {"type": "string"},
                                 "timeZone": {"type": "string"},
+                                "percentageMode": {"type": "string", "enum": ["used", "remaining"]},
                                 "primary": {"anyOf": [{"$ref": "#/$defs/window"}, {"type": "null"}]},
                                 "secondary": {"anyOf": [{"$ref": "#/$defs/window"}, {"type": "null"}]},
                             },
-                            "required": ["updatedAtLocal", "timeZone", "primary", "secondary"],
+                            "required": ["updatedAtLocal", "timeZone", "percentageMode", "primary", "secondary"],
                             "additionalProperties": False,
                             "$defs": {
                                 "window": {
@@ -113,12 +147,14 @@ def handle(message: dict[str, Any]) -> None:
                                     "properties": {
                                         "windowDurationMins": {"type": ["integer", "null"]},
                                         "usedPercent": {"type": "number"},
+                                        "displayPercent": {"type": "number"},
                                         "resetsAt": {"type": ["integer", "number", "null"]},
                                         "resetTimeLocal": {"type": ["string", "null"]},
                                     },
                                     "required": [
                                         "windowDurationMins",
                                         "usedPercent",
+                                        "displayPercent",
                                         "resetsAt",
                                         "resetTimeLocal",
                                     ],
@@ -139,7 +175,7 @@ def handle(message: dict[str, Any]) -> None:
         if params.get("name") != TOOL_NAME:
             response(request_id, {"isError": True, "content": [{"type": "text", "text": "Unknown tool."}]})
         else:
-            response(request_id, tool_result())
+            response(request_id, tool_result(params.get("arguments")))
     elif method and method.startswith("notifications/"):
         return
     elif request_id is not None:
