@@ -20,19 +20,11 @@ SERVER_VERSION = "1.1.0"
 TOOL_NAME = "get_codex_limits"
 PERCENTAGE_MODES = {"used", "remaining"}
 SERVER_INSTRUCTIONS = (
-    "For each Codex reply, call get_codex_limits once immediately before composing the final "
-    "answer. Default percentageMode to 'remaining'; pass 'used' only when the user asks for the "
-    "used percentage. Use the tool result's displayPercent and percentageMode for the text. "
-    "Separate the main answer from the compact fallback with a Markdown horizontal rule, then use "
-    "one Markdown bullet per available window. Keep percentages right-aligned in a four-character "
-    "field using figure spaces (U+2007) before shorter values, and put one ideographic space "
-    "(U+3000) before each 20-cell progress bar so both bars start on the same axis. Use '█' for "
-    "filled cells and '░' for empty cells; wrap only the 20-cell bar in inline code to keep its "
-    "cells on a monospace grid. Never put the whole fallback in a code block. Include the "
-    "local reset time. Do not put the whole fallback in a code fence or table, and do not add a "
-    "heading, updated timestamp, timezone, or column labels. In Russian, use labels '5ч' and '7д'. "
-    "Do not call the tool more "
-    "than once per assistant turn."
+    "Use get_codex_limits only when the user explicitly asks about their Codex rate limits or "
+    "requests the current limit data. Do not call it automatically for replies, and do not append "
+    "a rate-limit status block or other limit information to replies unless the user asks for it. "
+    "The percentageMode defaults to 'remaining'; pass 'used' only when the user asks for the "
+    "used percentage."
 )
 
 
@@ -112,9 +104,9 @@ def handle(message: dict[str, Any]) -> None:
                         "name": TOOL_NAME,
                         "title": "Read Codex rate limits",
                         "description": (
-                            "Read current Codex plan rate-limit windows. Use once immediately "
-                            "before composing a Codex reply that should end with a fresh status "
-                            "block in the user's language. percentageMode selects whether "
+                            "Read current Codex plan rate-limit windows when explicitly requested. "
+                            "Do not call automatically or append limit data to replies. "
+                            "percentageMode selects whether "
                             "displayPercent represents used or remaining usage (defaults to remaining). "
                             "Returns locale-neutral structured data. Read-only."
                         ),
